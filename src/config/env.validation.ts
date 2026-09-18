@@ -1,11 +1,6 @@
 import { plainToInstance } from "class-transformer";
 import { IsEnum, IsNumber, IsString, validateSync } from "class-validator";
-
-enum Environment {
-    Development = 'development',
-    Production = 'production',
-    Staging = 'staging',
-}
+import { Environment } from "../common/enums/environment.enum.js";
 
 class EnvironmentVariables {
     @IsEnum(Environment)
