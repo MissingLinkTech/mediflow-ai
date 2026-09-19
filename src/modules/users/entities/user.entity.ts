@@ -1,6 +1,7 @@
-import { Column, Entity } from "typeorm";
+import { Column, Entity, OneToMany } from "typeorm";
 import { BaseEntity } from "../../../common/entities/base.entity.js";
 import { Role } from "../../../common/enums/role.enum.js";
+import { UserSession } from "./user-session.entity.js";
 
 @Entity('users')
 export class User extends BaseEntity {
@@ -10,7 +11,7 @@ export class User extends BaseEntity {
     @Column({unique: true})
     email: string;
 
-    @Column({select: false})
+    @Column()
     password: string;
 
     @Column({type: 'enum', enum: Role, default: Role.USER})
@@ -21,4 +22,7 @@ export class User extends BaseEntity {
 
     @Column({name: 'email_verified_at', type: 'timestamptz', nullable: true})
     emailVerifiedAt: Date | null
+
+    @OneToMany(() => UserSession, (session) => session.user)
+    sessions: UserSession[];
 }

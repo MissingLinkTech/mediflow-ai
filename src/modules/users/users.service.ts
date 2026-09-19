@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import * as bcrypt from 'bcrypt';
 import { User } from './entities/user.entity.js';
@@ -32,9 +32,9 @@ export class UsersService {
 
     async create(registerUserDto: RegisterDto): Promise<User> {
         const { password, email, ...rest } = registerUserDto;
-        const findUser = await this.findByEmail(email);
-        if (findUser) {
-            throw new BadRequestException(`User already exists with this email address: ${email}`);
+        const existingUser = await this.findByEmail(email);
+        if (existingUser) {
+            throw new ConflictException(`User already exists with this email address: ${email}`);
         }
         // Hash manually right before database insertion
         const salt = await bcrypt.genSalt();
