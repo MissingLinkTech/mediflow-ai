@@ -2,15 +2,15 @@ import { ForbiddenException, Injectable, NotFoundException, UnauthorizedExceptio
 import * as bcrypt from 'bcrypt';
 import { JwtService } from '@nestjs/jwt';
 import { LoginDto } from './dto/login.dto.js';
-import { CommonService } from '../../common/services/common.service.js';
-import { COMMON_MESSAGES } from '../../common/constants/common-message.constants.js';
 import { RefreshTokenDto } from './dto/refresh-token.dto.js';
 import { ConfigService } from '@nestjs/config';
 import { JwtPayload } from './interfaces/jwt-payload.interface.js';
 import { InjectRepository } from '@nestjs/typeorm';
-import { UserSession } from '../users/entities/user-session.entity.js';
 import { Repository } from 'typeorm';
-import { getCurrentDate } from '../../common/utils/date.util.js';
+import { UserSession } from '@/modules/users/entities/user-session.entity.js';
+import { CommonService } from '@/common/services/common.service.js';
+import { COMMON_MESSAGES } from '@/common/constants/common-message.constants.js';
+import { getCurrentDate } from '@/common/utils/date.util.js';
 
 @Injectable()
 export class AuthService {

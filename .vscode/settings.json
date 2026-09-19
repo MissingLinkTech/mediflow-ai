@@ -1,5 +1,7 @@
 {
   "editor.fontFamily": "'Fira Code', Consolas, monospace",
   "editor.fontLigatures": true,
-  "editor.inlineSuggest.enabled": false
+  "editor.inlineSuggest.enabled": false,
+  "js/ts.preferences.importModuleSpecifier": "non-relative",
+  "js/ts.preferences.importModuleSpecifierEnding": "js"
 }
