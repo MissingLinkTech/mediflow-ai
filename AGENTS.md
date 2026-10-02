@@ -9,18 +9,15 @@ Existing functionality:
 - NestJS API with global prefix `/api/v1`.
 - Global `ValidationPipe` with `whitelist`, `forbidNonWhitelisted`, and `transform`.
 - PostgreSQL connection through TypeORM.
-- User registration, user listing, login token generation, and user/session entities.
+- User registration, user listing, login, refresh-token rotation, logout, password reset/change, and account profile/settings endpoints.
 - DTO validation with `class-validator`.
 - Password hashing with `bcrypt`.
 - ESLint flat config, Prettier, Vitest, and Supertest setup.
 
-Partially implemented functionality:
+Partially implemented / not yet wired functionality:
 
-- Refresh-token endpoint verifies token/session state but does not yet return a new token pair or rotate/revoke sessions.
 - `User.role` exists, but guards and role-based authorization are not implemented.
-- Session metadata fields exist, but request user-agent/IP are not passed from the controller.
-- Swagger and Passport packages are installed but not wired into `main.ts`, strategies, or guards.
-- Auth session repository/module wiring should be verified before extending refresh/session behavior.
+- Swagger packages are installed but Swagger setup is not wired into `main.ts`.
 
 Future/planned functionality:
 
@@ -67,8 +64,8 @@ Not currently installed/implemented:
 - `src/app.module.ts`: root module; imports config, database, auth, and users modules.
 - `src/database/database.module.ts`: TypeORM PostgreSQL configuration.
 - `src/config/env.validation.ts`: startup validation for core environment variables.
-- `src/modules/users`: user controller, service, DTOs, and `User`/`UserSession` entities.
-- `src/modules/auth`: login and refresh-token controller/service/DTOs.
+- `src/modules/users`: user/account controllers, service, DTOs, and `User` entity.
+- `src/modules/auth`: signup, login, refresh, logout, forgot/reset password controller/service/DTOs/strategies.
 - `src/common`: shared constants, base entity, enums, interfaces, service, and utilities.
 - `test`: e2e starter test.
 - Empty placeholder directories exist under `common/guards`, `common/middlewares`, `auth/entities`, and `auth/strategies`; do not treat them as implemented.
@@ -159,7 +156,7 @@ Expand only when needed. Do not repeatedly read files whose relevant content is 
 The project currently uses TypeORM with PostgreSQL.
 
 - Inspect existing entities before changing persistence behavior.
-- Preserve relationships between `User` and `UserSession`.
+- Preserve the `User` fields that store password, refresh-token, and reset-token hashes.
 - Register entities with `TypeOrmModule.forFeature(...)` in the module that injects their repositories.
 - There are no migrations yet. Do not invent migration conventions or generate migrations unless requested.
 - `synchronize` is enabled only in development. Do not enable destructive schema behavior for production.
@@ -178,7 +175,7 @@ Never:
 - Return password hashes or sensitive internals from APIs.
 - Log medical documents, raw health conversations, or unnecessary PHI.
 
-Use `ConfigService` and environment variables for secrets. Preserve existing auth endpoint paths and response shapes unless the task explicitly changes them. When extending auth, verify refresh-token rotation, session repository wiring, revocation behavior, and guard boundaries carefully.
+Use `ConfigService` and environment variables for secrets. Preserve existing auth endpoint paths and response shapes unless the task explicitly changes them. When extending auth, verify refresh-token rotation, token-hash clearing, reset-token expiration, and guard boundaries carefully.
 
 ## AI / LLM Guidelines
 

@@ -18,14 +18,14 @@ export class CommonService {
     id: string | null,
     email: string | null,
   ): Promise<User | null> {
-    let user;
+    let user: User | null = null;
 
     if (id) {
-      user = this.userRepository.findOne({ where: { id } });
+      user = await this.userRepository.findOne({ where: { id } });
     }
 
     if (email) {
-      user = this.userRepository.findOne({ where: { email } });
+      user = await this.userRepository.findOne({ where: { email } });
     }
 
     if (!user) {

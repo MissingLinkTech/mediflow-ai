@@ -5,20 +5,27 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import * as bcrypt from 'bcrypt';
-import { User } from './entities/user.entity.js';
 import { Repository } from 'typeorm';
-import { RegisterDto } from './dto/register.dto.js';
+import { SignUpDto } from '@/modules/auth/dto/sign-up.dto.js';
+import { Role } from '@/common/enums/role.enum.js';
+import { User, UserSettings } from './entities/user.entity.js';
+import { UpdateAccountSettingsDto } from './dto/update-account-settings.dto.js';
 
 @Injectable()
 export class UsersService {
+  private readonly passwordSaltRounds = 12;
+
   constructor(
     @InjectRepository(User) private readonly userRepository: Repository<User>,
   ) {}
 
+  normalizeEmail(email: string): string {
+    return email.trim().toLowerCase();
+  }
+
   async findByEmail(email: string): Promise<User | null> {
-    const emailTrim = email.trim().toLowerCase();
     return this.userRepository.findOne({
-      where: { email: emailTrim },
+      where: { email: this.normalizeEmail(email) },
     });
   }
 
@@ -28,7 +35,7 @@ export class UsersService {
     });
   }
 
-  async findByIdOrFail(id: string): Promise<User | null> {
+  async findByIdOrFail(id: string): Promise<User> {
     const user = await this.findById(id);
     if (!user) {
       throw new NotFoundException('User not found.');
@@ -36,21 +43,34 @@ export class UsersService {
     return user;
   }
 
-  async create(registerUserDto: RegisterDto): Promise<User> {
-    const { password, email, ...rest } = registerUserDto;
-    const existingUser = await this.findByEmail(email);
-    if (existingUser) {
-      throw new ConflictException(
-        `User already exists with this email address: ${email}`,
-      );
-    }
-    // Hash manually right before database insertion
-    const salt = await bcrypt.genSalt();
-    const hashedPassword = await bcrypt.hash(password, salt);
-    const user = this.userRepository.create({
-      password: hashedPassword,
-      ...rest,
+  async findByResetTokenHash(tokenHash: string): Promise<User | null> {
+    return this.userRepository.findOne({
+      where: { resetPasswordTokenHash: tokenHash },
     });
+  }
+
+  async create(signUpDto: SignUpDto): Promise<User> {
+    const email = this.normalizeEmail(signUpDto.email);
+    const existingUser = await this.findByEmail(email);
+
+    if (existingUser) {
+      throw new ConflictException('A user with this email already exists.');
+    }
+
+    const passwordHash = await this.hashPassword(signUpDto.password);
+    const user = this.userRepository.create({
+      email,
+      name: signUpDto.name?.trim() ? signUpDto.name.trim() : null,
+      passwordHash,
+      refreshTokenHash: null,
+      resetPasswordTokenHash: null,
+      resetPasswordExpiresAt: null,
+      settings: {},
+      role: Role.USER,
+      isActive: true,
+      emailVerifiedAt: null,
+    });
+
     return this.userRepository.save(user);
   }
 
@@ -60,5 +80,67 @@ export class UsersService {
         createdAt: 'DESC',
       },
     });
+  }
+
+  async hashPassword(password: string): Promise<string> {
+    return bcrypt.hash(password, this.passwordSaltRounds);
+  }
+
+  async updateRefreshTokenHash(
+    userId: string,
+    refreshTokenHash: string | null,
+  ): Promise<void> {
+    await this.userRepository.update(userId, { refreshTokenHash });
+  }
+
+  async setPasswordResetToken(
+    userId: string,
+    resetPasswordTokenHash: string,
+    resetPasswordExpiresAt: Date,
+  ): Promise<void> {
+    await this.userRepository.update(userId, {
+      resetPasswordTokenHash,
+      resetPasswordExpiresAt,
+    });
+  }
+
+  async updatePasswordAndClearSensitiveTokens(
+    userId: string,
+    passwordHash: string,
+  ): Promise<void> {
+    await this.userRepository.update(userId, {
+      passwordHash,
+      refreshTokenHash: null,
+      resetPasswordTokenHash: null,
+      resetPasswordExpiresAt: null,
+    });
+  }
+
+  async updateAccountSettings(
+    userId: string,
+    dto: UpdateAccountSettingsDto,
+  ): Promise<User> {
+    const user = await this.findByIdOrFail(userId);
+    const settings: UserSettings = { ...user.settings };
+
+    if (dto.name !== undefined) {
+      user.name = dto.name.trim();
+      settings.displayName = dto.name.trim();
+    }
+
+    if (dto.locale !== undefined) {
+      settings.locale = dto.locale;
+    }
+
+    if (dto.timezone !== undefined) {
+      settings.timezone = dto.timezone;
+    }
+
+    if (dto.notificationEmails !== undefined) {
+      settings.notificationEmails = dto.notificationEmails;
+    }
+
+    user.settings = settings;
+    return this.userRepository.save(user);
   }
 }
