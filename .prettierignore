@@ -1,0 +1,14 @@
+node_modules
+dist
+build
+coverage
+generated
+
+*.generated.*
+*.gen.*
+*.d.ts
+*.tsbuildinfo
+
+.env
+.env.*
+!.env.example

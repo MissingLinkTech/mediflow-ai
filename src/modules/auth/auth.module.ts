@@ -6,11 +6,8 @@ import { User } from '@/modules/users/entities/user.entity.js';
 import { CommonModule } from '@/common/common.module.js';
 
 @Module({
-  imports: [
-    TypeOrmModule.forFeature([User]),
-    CommonModule
-  ],
+  imports: [TypeOrmModule.forFeature([User]), CommonModule],
   providers: [AuthService],
-  controllers: [AuthController]
+  controllers: [AuthController],
 })
 export class AuthModule {}
