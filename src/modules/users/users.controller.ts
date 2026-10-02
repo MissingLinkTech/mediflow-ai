@@ -1,14 +1,19 @@
-import { Controller, Get, UseGuards } from '@nestjs/common';
+import { Controller, Get, Query, UseGuards } from '@nestjs/common';
+import { ApiTags } from '@nestjs/swagger';
+import { PaginationQueryDto } from '@/common/dto/pagination-query.dto.js';
 import { JwtAuthGuard } from '@/common/guards/jwt-auth.guard.js';
+import { ApiUsersDocs } from './docs/users.docs.js';
 import { UsersService } from './users.service.js';
 
+@ApiTags('Users')
 @Controller('users')
 export class UsersController {
   constructor(private readonly userService: UsersService) {}
 
   @Get()
   @UseGuards(JwtAuthGuard)
-  async findAll() {
-    return this.userService.findAll();
+  @ApiUsersDocs.findAll()
+  async findAll(@Query() query: PaginationQueryDto) {
+    return this.userService.findAll(query);
   }
 }

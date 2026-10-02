@@ -7,6 +7,11 @@ import { InjectRepository } from '@nestjs/typeorm';
 import * as bcrypt from 'bcrypt';
 import { Repository } from 'typeorm';
 import { SignUpDto } from '@/modules/auth/dto/sign-up.dto.js';
+import { PaginationQueryDto } from '@/common/dto/pagination-query.dto.js';
+import {
+  PageMetaDto,
+  PaginatedResponseDto,
+} from '@/common/dto/paginated-response.dto.js';
 import { Role } from '@/common/enums/role.enum.js';
 import { User, UserSettings } from './entities/user.entity.js';
 import { UpdateAccountSettingsDto } from './dto/update-account-settings.dto.js';
@@ -74,12 +79,25 @@ export class UsersService {
     return this.userRepository.save(user);
   }
 
-  async findAll(): Promise<User[]> {
-    return this.userRepository.find({
+  async findAll(
+    query: PaginationQueryDto,
+  ): Promise<PaginatedResponseDto<User>> {
+    const [items, totalItems] = await this.userRepository.findAndCount({
+      skip: (query.page - 1) * query.limit,
+      take: query.limit,
       order: {
         createdAt: 'DESC',
       },
     });
+
+    return {
+      items,
+      meta: PageMetaDto.create({
+        page: query.page,
+        limit: query.limit,
+        totalItems,
+      }),
+    };
   }
 
   async hashPassword(password: string): Promise<string> {

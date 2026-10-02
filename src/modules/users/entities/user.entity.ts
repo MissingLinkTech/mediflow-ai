@@ -12,7 +12,7 @@ export interface UserSettings {
 
 @Entity('users')
 export class User extends BaseEntity {
-  @Column({ length: 100, nullable: true })
+  @Column({ type: 'varchar', length: 100, nullable: true })
   name: string | null;
 
   @Column({ unique: true })

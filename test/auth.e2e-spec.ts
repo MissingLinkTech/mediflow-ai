@@ -15,6 +15,8 @@ import { getRepositoryToken } from '@nestjs/typeorm';
 import { randomUUID } from 'node:crypto';
 import request from 'supertest';
 import { type App } from 'supertest/types';
+import { HttpExceptionFilter } from '../src/common/filters/http-exception.filter.js';
+import { TransformInterceptor } from '../src/common/interceptors/transform.interceptor.js';
 import { AuthController } from '../src/modules/auth/auth.controller.js';
 import { AuthService } from '../src/modules/auth/auth.service.js';
 import { JwtRefreshStrategy } from '../src/modules/auth/strategies/jwt-refresh.strategy.js';
@@ -144,9 +146,12 @@ describe('Authentication lifecycle (e2e)', () => {
         transform: true,
       }),
     );
+    const reflector = app.get(Reflector);
     app.useGlobalInterceptors(
-      new ClassSerializerInterceptor(app.get(Reflector)),
+      new TransformInterceptor(reflector),
+      new ClassSerializerInterceptor(reflector),
     );
+    app.useGlobalFilters(new HttpExceptionFilter());
     app.setGlobalPrefix('api/v1');
     await app.init();
   });
@@ -171,41 +176,49 @@ describe('Authentication lifecycle (e2e)', () => {
       .send({ name: 'Patient One', email, password })
       .expect(201);
 
-    expect(signUpResponse.body.accessToken).toEqual(expect.any(String));
-    expect(signUpResponse.body.refreshToken).toEqual(expect.any(String));
-    expect(signUpResponse.body.user.email).toBe('patient.one@example.com');
-    expect(signUpResponse.body.user.passwordHash).toBeUndefined();
-    expect(signUpResponse.body.user.refreshTokenHash).toBeUndefined();
+    expect(signUpResponse.body.success).toBe(true);
+    expect(signUpResponse.body.statusCode).toBe(201);
+    expect(signUpResponse.body.message).toBe('User registered successfully');
+    expect(signUpResponse.body.data.accessToken).toEqual(expect.any(String));
+    expect(signUpResponse.body.data.refreshToken).toEqual(expect.any(String));
+    expect(signUpResponse.body.data.user.email).toBe('patient.one@example.com');
+    expect(signUpResponse.body.data.user.passwordHash).toBeUndefined();
+    expect(signUpResponse.body.data.user.refreshTokenHash).toBeUndefined();
 
     const loginResponse = await request(server)
       .post('/api/v1/auth/login')
       .send({ email: ' patient.one@example.com ', password })
       .expect(200);
 
-    expect(loginResponse.body.accessToken).toEqual(expect.any(String));
-    expect(loginResponse.body.refreshToken).toEqual(expect.any(String));
+    expect(loginResponse.body.success).toBe(true);
+    expect(loginResponse.body.data.accessToken).toEqual(expect.any(String));
+    expect(loginResponse.body.data.refreshToken).toEqual(expect.any(String));
 
     const refreshResponse = await request(server)
       .post('/api/v1/auth/refresh_token')
-      .send({ refreshToken: loginResponse.body.refreshToken })
+      .send({ refreshToken: loginResponse.body.data.refreshToken })
       .expect(200);
 
-    expect(refreshResponse.body.accessToken).toEqual(expect.any(String));
-    expect(refreshResponse.body.refreshToken).toEqual(expect.any(String));
-    expect(refreshResponse.body.refreshToken).not.toBe(
-      loginResponse.body.refreshToken,
+    expect(refreshResponse.body.success).toBe(true);
+    expect(refreshResponse.body.data.accessToken).toEqual(expect.any(String));
+    expect(refreshResponse.body.data.refreshToken).toEqual(expect.any(String));
+    expect(refreshResponse.body.data.refreshToken).not.toBe(
+      loginResponse.body.data.refreshToken,
     );
 
     await request(server)
       .post('/api/v1/account/change-password')
-      .set('Authorization', `Bearer ${refreshResponse.body.accessToken}`)
+      .set('Authorization', `Bearer ${refreshResponse.body.data.accessToken}`)
       .send({ currentPassword: password, newPassword })
       .expect(204);
 
-    await request(server)
+    const staleRefreshResponse = await request(server)
       .post('/api/v1/auth/refresh_token')
-      .send({ refreshToken: refreshResponse.body.refreshToken })
+      .send({ refreshToken: refreshResponse.body.data.refreshToken })
       .expect(401);
+
+    expect(staleRefreshResponse.body.success).toBe(false);
+    expect(staleRefreshResponse.body.statusCode).toBe(401);
 
     await request(server)
       .post('/api/v1/auth/login')
@@ -219,11 +232,29 @@ describe('Authentication lifecycle (e2e)', () => {
 
     const profileResponse = await request(server)
       .get('/api/v1/account/profile')
-      .set('Authorization', `Bearer ${newLoginResponse.body.accessToken}`)
+      .set('Authorization', `Bearer ${newLoginResponse.body.data.accessToken}`)
       .expect(200);
 
-    expect(profileResponse.body.email).toBe('patient.one@example.com');
-    expect(profileResponse.body.passwordHash).toBeUndefined();
-    expect(profileResponse.body.refreshTokenHash).toBeUndefined();
+    expect(profileResponse.body.success).toBe(true);
+    expect(profileResponse.body.data.email).toBe('patient.one@example.com');
+    expect(profileResponse.body.data.passwordHash).toBeUndefined();
+    expect(profileResponse.body.data.refreshTokenHash).toBeUndefined();
   }, 20000);
+
+  it('returns the standard error envelope for validation failures', async () => {
+    if (!app) {
+      throw new Error('Nest application was not initialized.');
+    }
+
+    const response = await request(app.getHttpServer())
+      .post('/api/v1/auth/login')
+      .send({ email: 'not-an-email', password: 'x' })
+      .expect(400);
+
+    expect(response.body.success).toBe(false);
+    expect(response.body.statusCode).toBe(400);
+    expect(response.body.message).toBe('Validation failed');
+    expect(response.body.errors).toEqual(expect.any(Array));
+    expect(response.body.timestamp).toEqual(expect.any(String));
+  });
 });

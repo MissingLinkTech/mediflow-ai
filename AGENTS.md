@@ -9,15 +9,17 @@ Existing functionality:
 - NestJS API with global prefix `/api/v1`.
 - Global `ValidationPipe` with `whitelist`, `forbidNonWhitelisted`, and `transform`.
 - PostgreSQL connection through TypeORM.
-- User registration, user listing, login, refresh-token rotation, logout, password reset/change, and account profile/settings endpoints.
+- User registration, paginated user listing, login, refresh-token rotation, logout, password reset/change, and account profile/settings endpoints.
 - DTO validation with `class-validator`.
 - Password hashing with `bcrypt`.
+- Standardized success envelope (`TransformInterceptor`) and error envelope (`HttpExceptionFilter`).
+- Swagger UI at `/api/docs` with Bearer auth and per-endpoint documentation decorators; controllers stay thin (one docs decorator per route).
+- Shared pagination contract: array endpoints return `{ items, meta }` via `PaginationQueryDto` / `PageMetaDto` / `PaginatedResponseDto`.
 - ESLint flat config, Prettier, Vitest, and Supertest setup.
 
 Partially implemented / not yet wired functionality:
 
 - `User.role` exists, but guards and role-based authorization are not implemented.
-- Swagger packages are installed but Swagger setup is not wired into `main.ts`.
 
 Future/planned functionality:
 
@@ -43,9 +45,8 @@ Confirmed from the repository:
 
 Installed but not fully wired:
 
-- `@nestjs/swagger`, `swagger-ui-express`
-- `@nestjs/passport`, `passport`, `passport-jwt`, `passport-local`
 - `argon2`
+- `passport-local` (no local strategy implemented)
 
 Not currently installed/implemented:
 
@@ -60,15 +61,20 @@ Not currently installed/implemented:
 
 ## Repository Structure
 
-- `src/main.ts`: Nest bootstrap, global validation pipe, global `/api/v1` prefix.
+- `src/main.ts`: Nest bootstrap, global validation pipe, global `/api/v1` prefix, Swagger `DocumentBuilder` setup.
 - `src/app.module.ts`: root module; imports config, database, auth, and users modules.
 - `src/database/database.module.ts`: TypeORM PostgreSQL configuration.
 - `src/config/env.validation.ts`: startup validation for core environment variables.
-- `src/modules/users`: user/account controllers, service, DTOs, and `User` entity.
+- `src/modules/users`: user/account controllers, service, DTOs, response DTOs, per-route docs decorators, and `User` entity.
 - `src/modules/auth`: signup, login, refresh, logout, forgot/reset password controller/service/DTOs/strategies.
 - `src/common`: shared constants, base entity, enums, interfaces, service, and utilities.
-- `test`: e2e starter test.
-- Empty placeholder directories exist under `common/guards`, `common/middlewares`, `auth/entities`, and `auth/strategies`; do not treat them as implemented.
+- `src/common/dto`: success/error envelopes (`api-response.dto.ts`) and pagination contract (`pagination-query.dto.ts`, `paginated-response.dto.ts`).
+- `src/common/interceptors`: global `TransformInterceptor` producing the success envelope.
+- `src/common/filters`: global `HttpExceptionFilter` producing the error envelope.
+- `src/common/decorators/swagger`: reusable `ApiStandardResponse`, `ApiStandardErrorResponses`, `ApiStandardNoContent`, and `ApiPaginatedResponse` decorators.
+- `src/common/guards`: JWT access and refresh guards.
+- `test`: e2e specs for app health, auth lifecycle, and users pagination.
+- Empty placeholder directories exist under `common/middlewares` and `auth/entities`; do not treat them as implemented.
 
 ## Architecture Guidelines
 
@@ -150,6 +156,38 @@ Expand only when needed. Do not repeatedly read files whose relevant content is 
 - Rely on the global validation pipe; do not duplicate simple DTO validation in controllers.
 - Use service/domain checks for business rules such as uniqueness, ownership, active account status, and token/session validity.
 - Never silently trust client input, LLM output, uploaded documents, or external API responses.
+
+## API Response Conventions
+
+Success envelope (produced by the global `TransformInterceptor`):
+
+```json
+{
+  "success": true,
+  "statusCode": 200,
+  "message": "...",
+  "data": {},
+  "timestamp": "..."
+}
+```
+
+Error envelope (produced by the global `HttpExceptionFilter`):
+
+```json
+{
+  "success": false,
+  "statusCode": 400,
+  "message": "...",
+  "errors": [],
+  "timestamp": "..."
+}
+```
+
+- `204 No Content` responses carry no body (no envelope) by HTTP semantics.
+- Every endpoint returning a database-backed array must be paginated: accept `PaginationQueryDto` (`page` default 1, `limit` default 20, max 100) and return `PaginatedResponseDto` shaped as `data: { items, meta }`, where `meta` is a `PageMetaDto` (`page`, `limit`, `totalItems`, `totalPages`, `hasNextPage`, `hasPreviousPage`). Never return a bare array.
+- New paginated endpoints must reuse `PageMetaDto.create()` for meta math and document with `ApiPaginatedResponse`; non-paginated success responses use `ApiStandardResponse` and failures use `ApiStandardErrorResponses`.
+- Keep controllers thin: one docs decorator per route (e.g. `@ApiAuthDocs.login()`), defined in `src/modules/<feature>/docs/`. Per-endpoint envelope copy comes from `@ResponseMessage()`.
+- Do not redeclare the global prefix as a Swagger `servers` entry; document paths already contain it.
 
 ## Database Guidelines
 
@@ -285,10 +323,23 @@ Do not change endpoint paths, request DTOs, response shapes, status codes, or au
 Current routes use global prefix `/api/v1`:
 
 - `GET /api/v1`
-- `POST /api/v1/users`
-- `GET /api/v1/users`
+- `POST /api/v1/auth/signup`
 - `POST /api/v1/auth/login`
 - `POST /api/v1/auth/refresh_token`
+- `POST /api/v1/auth/logout`
+- `POST /api/v1/auth/forgot-password`
+- `POST /api/v1/auth/reset-password`
+- `GET /api/v1/account/profile`
+- `POST /api/v1/account/change-password`
+- `PATCH /api/v1/account/settings`
+- `GET /api/v1/users` (paginated `{ items, meta }`)
+
+## Documentation Sync
+
+When a feature is added or existing behavior changes, update `AGENTS.md` and `README.md` in the same change so both stay accurate:
+
+- `AGENTS.md`: project overview, structure, conventions, and route list.
+- `README.md`: features, API table, structure, and roadmap status.
 
 ## Scope Control
 
