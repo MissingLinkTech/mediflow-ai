@@ -17,6 +17,7 @@ import { CreateChatDto } from '../dto/create-chat.dto.js';
 import { CreateMessageDto } from '../dto/create-message.dto.js';
 import { UpdateChatDto } from '../dto/update-chat.dto.js';
 import {
+  ChatReplyResponseDto,
   ChatSessionResponseDto,
   MessageResponseDto,
 } from '../dto/responses/chat-response.dto.js';
@@ -228,29 +229,40 @@ export const ApiChatDocs = {
     return applyDecorators(
       ResponseMessage('Message added successfully'),
       ApiOperation({
-        summary: 'Add a message to an owned chat',
+        summary: 'Send a message and receive the AI reply',
         description: [
-          'Appends one message to the caller’s conversation. Messages are the chat history — no separate history record exists.',
+          'Persists the caller’s USER message, generates an assistant reply with recent conversation history, and returns both persisted messages.',
           '',
           'Headers: `Authorization: Bearer <accessToken>` required. `Content-Type: application/json` required.',
           '',
           'Business rules:',
           '- The parent chat must belong to the caller; foreign ids return 404 without revealing existence.',
-          '- `role` defaults to `user`; `status` defaults to `completed`.',
-          '- The chat `updatedAt` is bumped so latest-activity ordering stays accurate.',
+          '- The request carries only `content`; role and status are backend-controlled (clients cannot impersonate assistant/system/tool).',
+          '- The assistant message is stored `completed` on success or `failed` with a generic fallback when generation fails.',
+          '- Generation metadata is stored server-side and is not returned.',
+          '- Provider failures return 503 without leaking provider details; the USER message and history stay intact for a retry.',
         ].join('\n'),
       }),
       ApiBearerAuth('access-jwt'),
       ApiParam(CHAT_ID_PARAM),
       ApiBody({ type: CreateMessageDto }),
       ApiStandardResponse({
-        type: MessageResponseDto,
+        type: ChatReplyResponseDto,
         status: 201,
-        description: 'Created message wrapped in the success envelope.',
+        description:
+          'Persisted user message and assistant reply wrapped in the success envelope.',
         message: 'Message added successfully',
-        exampleData: MESSAGE_EXAMPLE,
+        exampleData: {
+          userMessage: MESSAGE_EXAMPLE,
+          assistantMessage: {
+            ...MESSAGE_EXAMPLE,
+            id: 'b2c3d4e5-6789-4bcd-9efa-1234567890bc',
+            role: 'assistant',
+            content: 'Can you tell me where the pain is located?',
+          },
+        },
       }),
-      ApiStandardErrorResponses([400, 401, 404, 500]),
+      ApiStandardErrorResponses([400, 401, 404, 500, 503]),
     );
   },
 

@@ -1,6 +1,7 @@
 import {
   type INestApplication,
   NotFoundException,
+  ServiceUnavailableException,
   ValidationPipe,
 } from '@nestjs/common';
 import { ClassSerializerInterceptor } from '@nestjs/common';
@@ -224,8 +225,17 @@ describe('Chats (e2e)', () => {
     expect(chatService.deleteChat).toHaveBeenCalledWith(USER_ID, CHAT_ID);
   });
 
-  it('adds a message to an owned chat', async () => {
-    chatService.addMessage.mockResolvedValue(seedMessage());
+  it('sends a message and returns the user/assistant pair', async () => {
+    const assistantMessage = {
+      ...seedMessage(),
+      id: '66666666-6666-4666-8666-666666666666',
+      role: 'assistant',
+      content: 'Where is the pain located?',
+    };
+    chatService.addMessage.mockResolvedValue({
+      userMessage: seedMessage(),
+      assistantMessage,
+    });
 
     const response = await http()
       .post(`/api/v1/chats/${CHAT_ID}/messages`)
@@ -234,12 +244,42 @@ describe('Chats (e2e)', () => {
 
     expect(response.body.success).toBe(true);
     expect(response.body.message).toBe('Message added successfully');
+    expect(response.body.data.userMessage.role).toBe('user');
+    expect(response.body.data.assistantMessage.role).toBe('assistant');
     expect(chatService.addMessage).toHaveBeenCalledWith(
       USER_ID,
       CHAT_ID,
       expect.objectContaining({
         content: 'I have had headaches for three days.',
       }),
+    );
+  });
+
+  it('rejects client-supplied roles with the error envelope', async () => {
+    const response = await http()
+      .post(`/api/v1/chats/${CHAT_ID}/messages`)
+      .send({ content: 'Hello', role: 'assistant' })
+      .expect(400);
+
+    expect(response.body.success).toBe(false);
+    expect(chatService.addMessage).not.toHaveBeenCalled();
+  });
+
+  it('maps AI generation failure to the 503 error envelope', async () => {
+    chatService.addMessage.mockRejectedValue(
+      new ServiceUnavailableException(
+        'AI assistance is temporarily unavailable. Please try again.',
+      ),
+    );
+
+    const response = await http()
+      .post(`/api/v1/chats/${CHAT_ID}/messages`)
+      .send({ content: 'I have had headaches for three days.' })
+      .expect(503);
+
+    expect(response.body.success).toBe(false);
+    expect(response.body.message).toBe(
+      'AI assistance is temporarily unavailable. Please try again.',
     );
   });
 

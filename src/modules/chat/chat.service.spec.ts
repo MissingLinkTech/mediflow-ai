@@ -1,10 +1,15 @@
-import { NotFoundException } from '@nestjs/common';
+import { NotFoundException, ServiceUnavailableException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Test, type TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
+import { MEDIFLOW_SYSTEM_INSTRUCTION } from '@/modules/ai/ai.constants.js';
+import { AiService } from '@/modules/ai/ai.service.js';
+import { AiProviderName } from '@/modules/ai/enums/ai-provider-name.enum.js';
 import { ChatService } from './chat.service.js';
 import { ChatContext } from './entities/chat-context.entity.js';
 import { ChatSession } from './entities/chat-session.entity.js';
+import { MessageMetadata } from './entities/message-metadata.entity.js';
 import { Message } from './entities/message.entity.js';
 import { ChatStatus } from './enums/chat-status.enum.js';
 import { ChatType } from './enums/chat-type.enum.js';
@@ -65,8 +70,15 @@ function createRepositoryMock() {
       };
     }),
     findOne: vi.fn(),
+    find: vi.fn(),
     findAndCount: vi.fn(),
     delete: vi.fn(),
+  };
+}
+
+function createAiServiceMock() {
+  return {
+    generateReply: vi.fn(),
   };
 }
 
@@ -75,12 +87,18 @@ describe('ChatService', () => {
   let sessionRepository: ReturnType<typeof createRepositoryMock>;
   let messageRepository: ReturnType<typeof createRepositoryMock>;
   let contextRepository: ReturnType<typeof createRepositoryMock>;
+  let metadataRepository: ReturnType<typeof createRepositoryMock>;
+  let aiService: ReturnType<typeof createAiServiceMock>;
+  let configService: { get: ReturnType<typeof vi.fn> };
   let transaction: ReturnType<typeof vi.fn>;
 
   beforeEach(async () => {
     sessionRepository = createRepositoryMock();
     messageRepository = createRepositoryMock();
     contextRepository = createRepositoryMock();
+    metadataRepository = createRepositoryMock();
+    aiService = createAiServiceMock();
+    configService = { get: vi.fn().mockReturnValue(undefined) };
 
     const manager = {
       getRepository: vi.fn((entity: unknown) => {
@@ -110,7 +128,13 @@ describe('ChatService', () => {
           provide: getRepositoryToken(ChatContext),
           useValue: contextRepository,
         },
+        {
+          provide: getRepositoryToken(MessageMetadata),
+          useValue: metadataRepository,
+        },
         { provide: DataSource, useValue: { transaction } },
+        { provide: AiService, useValue: aiService },
+        { provide: ConfigService, useValue: configService },
       ],
     }).compile();
 
@@ -243,10 +267,24 @@ describe('ChatService', () => {
   });
 
   describe('addMessage', () => {
-    it('appends a message with defaults and bumps chat activity', async () => {
-      sessionRepository.findOne.mockResolvedValue(seedSession());
+    const aiResult = {
+      text: 'Where is the pain located?',
+      provider: AiProviderName.GEMINI,
+      model: 'gemini-3.8-flash',
+      usage: { inputTokens: 10, outputTokens: 8, totalTokens: 18 },
+      finishReason: 'STOP',
+      latencyMs: 123,
+    };
 
-      const message = await service.addMessage(USER_ID, CHAT_ID, {
+    it('persists the user message, generates a reply, and stores metadata', async () => {
+      sessionRepository.findOne.mockResolvedValue(seedSession());
+      messageRepository.find.mockResolvedValue([
+        seedMessage({ role: MessageRole.ASSISTANT }),
+        seedMessage(),
+      ]);
+      aiService.generateReply.mockResolvedValue(aiResult);
+
+      const reply = await service.addMessage(USER_ID, CHAT_ID, {
         content: 'Mostly on my left side.',
       });
 
@@ -262,10 +300,75 @@ describe('ChatService', () => {
       expect(sessionRepository.save).toHaveBeenCalledWith(
         expect.objectContaining({ id: CHAT_ID, updatedAt: expect.any(Date) }),
       );
-      expect(message).toMatchObject({ role: 'user', status: 'completed' });
+      expect(messageRepository.find).toHaveBeenCalledWith({
+        where: {
+          chatSession: { id: CHAT_ID },
+          status: expect.objectContaining({
+            _type: 'in',
+            _value: [MessageStatus.COMPLETED],
+          }),
+        },
+        order: { createdAt: 'DESC', id: 'DESC' },
+        take: 20,
+      });
+      expect(aiService.generateReply).toHaveBeenCalledWith({
+        messages: [
+          {
+            role: 'user',
+            content: 'I have had headaches for three days.',
+          },
+          {
+            role: 'assistant',
+            content: 'I have had headaches for three days.',
+          },
+        ],
+        systemInstruction: MEDIFLOW_SYSTEM_INSTRUCTION,
+      });
+      expect(messageRepository.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          role: MessageRole.ASSISTANT,
+          content: 'Where is the pain located?',
+          status: MessageStatus.COMPLETED,
+        }),
+      );
+      expect(metadataRepository.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          provider: AiProviderName.GEMINI,
+          model: 'gemini-3.8-flash',
+          inputTokens: 10,
+          outputTokens: 8,
+          totalTokens: 18,
+          latencyMs: 123,
+          finishReason: 'STOP',
+        }),
+      );
+      expect(reply.userMessage.role).toBe(MessageRole.USER);
+      expect(reply.assistantMessage.role).toBe(MessageRole.ASSISTANT);
+      expect(reply.assistantMessage.status).toBe(MessageStatus.COMPLETED);
     });
 
-    it('throws 404 without writing when the chat belongs to another user', async () => {
+    it('marks the assistant message failed and keeps history on provider failure', async () => {
+      sessionRepository.findOne.mockResolvedValue(seedSession());
+      messageRepository.find.mockResolvedValue([seedMessage()]);
+      aiService.generateReply.mockRejectedValue(
+        new ServiceUnavailableException(
+          'AI assistance is temporarily unavailable. Please try again.',
+        ),
+      );
+
+      await expect(
+        service.addMessage(USER_ID, CHAT_ID, { content: 'Hello?' }),
+      ).rejects.toThrow(ServiceUnavailableException);
+      expect(messageRepository.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          role: MessageRole.ASSISTANT,
+          status: MessageStatus.FAILED,
+        }),
+      );
+      expect(metadataRepository.save).not.toHaveBeenCalled();
+    });
+
+    it('throws 404 without writing or calling AI when the chat belongs to another user', async () => {
       sessionRepository.findOne.mockResolvedValue(null);
 
       await expect(
@@ -273,6 +376,30 @@ describe('ChatService', () => {
       ).rejects.toThrow(NotFoundException);
       expect(messageRepository.create).not.toHaveBeenCalled();
       expect(messageRepository.save).not.toHaveBeenCalled();
+      expect(aiService.generateReply).not.toHaveBeenCalled();
+    });
+
+    it('bounds history to the configured limit in chronological order', async () => {
+      configService.get.mockReturnValue(1);
+      sessionRepository.findOne.mockResolvedValue(seedSession());
+      messageRepository.find.mockResolvedValue([seedMessage()]);
+      aiService.generateReply.mockResolvedValue(aiResult);
+
+      await service.addMessage(USER_ID, CHAT_ID, { content: 'Hello?' });
+
+      expect(messageRepository.find).toHaveBeenCalledWith(
+        expect.objectContaining({ take: 1 }),
+      );
+      expect(aiService.generateReply).toHaveBeenCalledWith(
+        expect.objectContaining({
+          messages: [
+            {
+              role: 'user',
+              content: 'I have had headaches for three days.',
+            },
+          ],
+        }),
+      );
     });
   });
 

@@ -151,3 +151,23 @@ export class MessageResponseDto {
   })
   updatedAt: Date;
 }
+
+/**
+ * Pair returned by `POST /chats/:id/messages`: the persisted USER message
+ * and the generated ASSISTANT reply. Generation metadata is stored
+ * server-side and is not part of this payload.
+ */
+export class ChatReplyResponseDto {
+  @ApiProperty({
+    description: 'The persisted USER message.',
+    type: MessageResponseDto,
+  })
+  userMessage: MessageResponseDto;
+
+  @ApiProperty({
+    description:
+      'The persisted ASSISTANT reply (`completed`), or a `failed` placeholder when generation failed.',
+    type: MessageResponseDto,
+  })
+  assistantMessage: MessageResponseDto;
+}

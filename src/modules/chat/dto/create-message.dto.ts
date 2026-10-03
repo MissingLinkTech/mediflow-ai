@@ -1,35 +1,16 @@
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiProperty } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
 import type { TransformFnParams } from 'class-transformer';
-import {
-  IsEnum,
-  IsNotEmpty,
-  IsOptional,
-  IsString,
-  MaxLength,
-  MinLength,
-} from 'class-validator';
-import { MessageRole } from '../enums/message-role.enum.js';
-import { MessageStatus } from '../enums/message-status.enum.js';
+import { IsNotEmpty, IsString, MaxLength, MinLength } from 'class-validator';
 
 function trimString({ value }: TransformFnParams): unknown {
   return typeof value === 'string' ? value.trim() : value;
 }
 
 export class CreateMessageDto {
-  @ApiPropertyOptional({
-    description:
-      'Author of the message. Defaults to `user` when omitted. `tool` is reserved for future LangChain/LangGraph tool execution.',
-    enum: MessageRole,
-    example: MessageRole.USER,
-    required: false,
-  })
-  @IsOptional()
-  @IsEnum(MessageRole)
-  role?: MessageRole;
-
   @ApiProperty({
-    description: 'Message body. Blank strings are rejected.',
+    description:
+      'User message body. Blank strings are rejected. Role and processing state are backend-controlled: the message is always stored as USER/COMPLETED and answered by the AI assistant.',
     example: 'I have had headaches for three days.',
     minLength: 1,
     maxLength: 20000,
@@ -41,15 +22,4 @@ export class CreateMessageDto {
   @MaxLength(20000)
   @Transform(trimString)
   content: string;
-
-  @ApiPropertyOptional({
-    description:
-      'Processing state of the message. Defaults to `completed` when omitted.',
-    enum: MessageStatus,
-    example: MessageStatus.COMPLETED,
-    required: false,
-  })
-  @IsOptional()
-  @IsEnum(MessageStatus)
-  status?: MessageStatus;
 }

@@ -1,5 +1,11 @@
 import { plainToInstance } from 'class-transformer';
-import { IsEnum, IsNumber, IsString, validateSync } from 'class-validator';
+import {
+  IsEnum,
+  IsNumber,
+  IsOptional,
+  IsString,
+  validateSync,
+} from 'class-validator';
 import { Environment } from '../common/enums/environment.enum.js';
 
 class EnvironmentVariables {
@@ -32,6 +38,22 @@ class EnvironmentVariables {
 
   @IsString()
   JWT_REFRESH_EXPIRES_IN: string;
+
+  @IsOptional()
+  @IsString()
+  GEMINI_API_KEY?: string;
+
+  @IsOptional()
+  @IsString()
+  GEMINI_MODEL?: string;
+
+  @IsOptional()
+  @IsNumber()
+  AI_MAX_HISTORY_MESSAGES?: number;
+
+  @IsOptional()
+  @IsNumber()
+  AI_REQUEST_TIMEOUT_MS?: number;
 }
 
 export function validate(config: Record<string, unknown>) {

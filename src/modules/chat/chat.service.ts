@@ -1,17 +1,25 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource, In, Repository } from 'typeorm';
 import { PaginationQueryDto } from '@/common/dto/pagination-query.dto.js';
 import {
   PageMetaDto,
   PaginatedResponseDto,
 } from '@/common/dto/paginated-response.dto.js';
+import {
+  DEFAULT_AI_MAX_HISTORY_MESSAGES,
+  MEDIFLOW_SYSTEM_INSTRUCTION,
+} from '@/modules/ai/ai.constants.js';
+import { AiService } from '@/modules/ai/ai.service.js';
+import type { AiChatMessage } from '@/modules/ai/interfaces/ai-provider.interface.js';
 import { User } from '@/modules/users/entities/user.entity.js';
 import { CreateChatDto } from './dto/create-chat.dto.js';
 import { CreateMessageDto } from './dto/create-message.dto.js';
 import { UpdateChatDto } from './dto/update-chat.dto.js';
 import { ChatContext } from './entities/chat-context.entity.js';
 import { ChatSession } from './entities/chat-session.entity.js';
+import { MessageMetadata } from './entities/message-metadata.entity.js';
 import { Message } from './entities/message.entity.js';
 import { ChatStatus } from './enums/chat-status.enum.js';
 import { ChatType } from './enums/chat-type.enum.js';
@@ -23,6 +31,15 @@ export interface ChatDetail extends ChatSession {
   context: ChatContext | null;
 }
 
+/** Persisted USER message plus the generated ASSISTANT reply. */
+export interface ChatReply {
+  userMessage: Message;
+  assistantMessage: Message;
+}
+
+const AI_REPLY_FALLBACK =
+  'I was unable to generate a response right now. Please try again in a moment.';
+
 @Injectable()
 export class ChatService {
   constructor(
@@ -32,7 +49,11 @@ export class ChatService {
     private readonly messageRepository: Repository<Message>,
     @InjectRepository(ChatContext)
     private readonly chatContextRepository: Repository<ChatContext>,
+    @InjectRepository(MessageMetadata)
+    private readonly messageMetadataRepository: Repository<MessageMetadata>,
     private readonly dataSource: DataSource,
+    private readonly aiService: AiService,
+    private readonly configService: ConfigService,
   ) {}
 
   async createChat(userId: string, dto: CreateChatDto): Promise<ChatDetail> {
@@ -115,7 +136,7 @@ export class ChatService {
 
   async deleteChat(userId: string, chatId: string): Promise<void> {
     const chat = await this.findOwnedSessionOrFail(userId, chatId);
-    // Messages and the 1:1 context are removed by ON DELETE CASCADE.
+    // Messages, the 1:1 context, and metadata are removed by ON DELETE CASCADE.
     await this.chatSessionRepository.delete(chat.id);
   }
 
@@ -123,34 +144,65 @@ export class ChatService {
     userId: string,
     chatId: string,
     dto: CreateMessageDto,
-  ): Promise<Message> {
-    return this.dataSource.transaction(async (manager) => {
-      const sessionRepository = manager.getRepository(ChatSession);
-      const messageRepository = manager.getRepository(Message);
+  ): Promise<ChatReply> {
+    const chat = await this.findOwnedSessionOrFail(userId, chatId);
 
-      const chat = await sessionRepository.findOne({
-        where: { id: chatId, user: { id: userId } },
+    // Role is backend-controlled: user-facing messages are always USER.
+    const userMessage = await this.messageRepository.save(
+      this.messageRepository.create({
+        chatSession: { id: chat.id } as ChatSession,
+        role: MessageRole.USER,
+        content: dto.content,
+        status: MessageStatus.COMPLETED,
+      }),
+    );
+
+    // Adding a message is activity: keep latest-activity ordering accurate.
+    chat.updatedAt = new Date();
+    await this.chatSessionRepository.save(chat);
+
+    const assistantMessage = await this.messageRepository.save(
+      this.messageRepository.create({
+        chatSession: { id: chat.id } as ChatSession,
+        role: MessageRole.ASSISTANT,
+        content: '',
+        status: MessageStatus.PENDING,
+      }),
+    );
+
+    // The external call runs outside any transaction: short writes only.
+    try {
+      const result = await this.aiService.generateReply({
+        messages: toAiMessages(await this.loadRecentHistory(chat.id)),
+        systemInstruction: MEDIFLOW_SYSTEM_INSTRUCTION,
       });
 
-      if (!chat) {
-        throw new NotFoundException('Chat not found.');
-      }
+      assistantMessage.content = result.text;
+      assistantMessage.status = MessageStatus.COMPLETED;
+      const savedAssistant =
+        await this.messageRepository.save(assistantMessage);
 
-      const message = await messageRepository.save(
-        messageRepository.create({
-          chatSession: { id: chat.id } as ChatSession,
-          role: dto.role ?? MessageRole.USER,
-          content: dto.content,
-          status: dto.status ?? MessageStatus.COMPLETED,
+      await this.messageMetadataRepository.save(
+        this.messageMetadataRepository.create({
+          message: { id: savedAssistant.id } as Message,
+          provider: result.provider,
+          model: result.model,
+          inputTokens: result.usage.inputTokens ?? null,
+          outputTokens: result.usage.outputTokens ?? null,
+          totalTokens: result.usage.totalTokens ?? null,
+          latencyMs: result.latencyMs,
+          finishReason: result.finishReason ?? null,
         }),
       );
 
-      // Adding a message is activity: keep latest-activity ordering accurate.
-      chat.updatedAt = new Date();
-      await sessionRepository.save(chat);
-
-      return message;
-    });
+      return { userMessage, assistantMessage: savedAssistant };
+    } catch (error) {
+      // No PENDING row is left behind; history stays intact for a retry.
+      assistantMessage.content = AI_REPLY_FALLBACK;
+      assistantMessage.status = MessageStatus.FAILED;
+      await this.messageRepository.save(assistantMessage);
+      throw error;
+    }
   }
 
   async listMessages(
@@ -178,6 +230,29 @@ export class ChatService {
   }
 
   /**
+   * Last N messages in deterministic chronological order. Bounded so the
+   * provider never receives unlimited history; no summarization or memory.
+   */
+  private async loadRecentHistory(chatId: string): Promise<Message[]> {
+    const limit = Math.max(
+      1,
+      Math.floor(
+        this.configService.get<number>('AI_MAX_HISTORY_MESSAGES') ??
+          DEFAULT_AI_MAX_HISTORY_MESSAGES,
+      ),
+    );
+    const newestFirst = await this.messageRepository.find({
+      where: {
+        chatSession: { id: chatId },
+        status: In([MessageStatus.COMPLETED]),
+      },
+      order: { createdAt: 'DESC', id: 'DESC' },
+      take: limit,
+    });
+    return [...newestFirst].reverse();
+  }
+
+  /**
    * Ownership-aware lookup. The user scope is part of the query itself so a
    * foreign id is indistinguishable from a missing one (always 404).
    */
@@ -194,5 +269,35 @@ export class ChatService {
     }
 
     return chat;
+  }
+}
+
+/**
+ * Explicit role conversion into the provider-independent format. TOOL has
+ * no counterpart outside future tool execution, so it is skipped.
+ */
+function toAiMessages(messages: Message[]): AiChatMessage[] {
+  const converted: AiChatMessage[] = [];
+
+  for (const message of messages) {
+    const role = toAiRole(message.role);
+    if (role) {
+      converted.push({ role, content: message.content });
+    }
+  }
+
+  return converted;
+}
+
+function toAiRole(role: MessageRole): AiChatMessage['role'] | null {
+  switch (role) {
+    case MessageRole.USER:
+      return 'user';
+    case MessageRole.ASSISTANT:
+      return 'assistant';
+    case MessageRole.SYSTEM:
+      return 'system';
+    default:
+      return null;
   }
 }
