@@ -8,6 +8,7 @@ import { validate } from './config/env.validation.js';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter.js';
 import { TransformInterceptor } from './common/interceptors/transform.interceptor.js';
 import { AuthModule } from './modules/auth/auth.module.js';
+import { ChatModule } from './modules/chat/chat.module.js';
 import { UsersModule } from './modules/users/users.module.js';
 
 @Module({
@@ -19,6 +20,7 @@ import { UsersModule } from './modules/users/users.module.js';
     DatabaseModule,
     AuthModule,
     UsersModule,
+    ChatModule,
   ],
   controllers: [AppController],
   providers: [

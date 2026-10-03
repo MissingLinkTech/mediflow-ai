@@ -53,6 +53,10 @@ function setupSwagger(app: Awaited<ReturnType<typeof NestFactory.create>>) {
       'Self-service profile and settings (access JWT required).',
     )
     .addTag('Users', 'User listing (access JWT required).')
+    .addTag(
+      'Chats',
+      'Chat persistence: sessions, message history, and structured context (access JWT required).',
+    )
     .addBearerAuth(
       {
         type: 'http',

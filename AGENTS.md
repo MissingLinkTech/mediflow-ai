@@ -10,6 +10,7 @@ Existing functionality:
 - Global `ValidationPipe` with `whitelist`, `forbidNonWhitelisted`, and `transform`.
 - PostgreSQL connection through TypeORM.
 - User registration, paginated user listing, login, refresh-token rotation, logout, password reset/change, and account profile/settings endpoints.
+- Chat persistence: user-owned chat sessions, chronological message history, and 1:1 structured chat context with paginated REST APIs.
 - DTO validation with `class-validator`.
 - Password hashing with `bcrypt`.
 - Standardized success envelope (`TransformInterceptor`) and error envelope (`HttpExceptionFilter`).
@@ -64,6 +65,8 @@ Not currently installed/implemented:
 - `src/main.ts`: Nest bootstrap, global validation pipe, global `/api/v1` prefix, Swagger `DocumentBuilder` setup.
 - `src/app.module.ts`: root module; imports config, database, auth, and users modules.
 - `src/database/database.module.ts`: TypeORM PostgreSQL configuration.
+- `src/database/migrations`: TypeORM migrations (Phase 3 chat persistence is the first; old migrations are never edited).
+- `src/modules/chat`: chat sessions/messages/context entities, enums, DTOs, docs, controller, service, and module.
 - `src/config/env.validation.ts`: startup validation for core environment variables.
 - `src/modules/users`: user/account controllers, service, DTOs, response DTOs, per-route docs decorators, and `User` entity.
 - `src/modules/auth`: signup, login, refresh, logout, forgot/reset password controller/service/DTOs/strategies.
@@ -333,6 +336,13 @@ Current routes use global prefix `/api/v1`:
 - `POST /api/v1/account/change-password`
 - `PATCH /api/v1/account/settings`
 - `GET /api/v1/users` (paginated `{ items, meta }`)
+- `POST /api/v1/chats`
+- `GET /api/v1/chats` (paginated `{ items, meta }`, latest activity first)
+- `GET /api/v1/chats/:id`
+- `PATCH /api/v1/chats/:id`
+- `DELETE /api/v1/chats/:id`
+- `POST /api/v1/chats/:id/messages`
+- `GET /api/v1/chats/:id/messages` (paginated `{ items, meta }`, chronological)
 
 ## Documentation Sync
 
