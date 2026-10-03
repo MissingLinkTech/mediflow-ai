@@ -17,9 +17,10 @@ import type {
   AiProvider,
   AiUsage,
 } from '../interfaces/ai-provider.interface.js';
-
-const AI_UNAVAILABLE_MESSAGE =
-  'AI assistance is temporarily unavailable. Please try again.';
+import {
+  AI_NOT_CONFIGURED_MESSAGE,
+  throwNormalizedProviderError,
+} from './provider-error.js';
 
 /**
  * Gemini implementation of {@link AiProvider} using the official
@@ -47,7 +48,7 @@ export class GeminiProvider implements AiProvider {
     const apiKey = this.configService.get<string>('GEMINI_API_KEY')?.trim();
 
     if (!apiKey) {
-      throw new ServiceUnavailableException(AI_UNAVAILABLE_MESSAGE);
+      throw new ServiceUnavailableException(AI_NOT_CONFIGURED_MESSAGE);
     }
 
     const timeoutMs =
@@ -80,14 +81,7 @@ export class GeminiProvider implements AiProvider {
         latencyMs: Date.now() - startedAt,
       };
     } catch (error) {
-      if (error instanceof ServiceUnavailableException) {
-        throw error;
-      }
-      // Log the failure class only: never conversation content or secrets.
-      const reason =
-        error instanceof Error ? `${error.name}: ${error.message}` : 'unknown';
-      this.logger.warn(`Gemini request failed (${reason})`);
-      throw new ServiceUnavailableException(AI_UNAVAILABLE_MESSAGE);
+      throwNormalizedProviderError('Gemini', error, this.logger);
     }
   }
 

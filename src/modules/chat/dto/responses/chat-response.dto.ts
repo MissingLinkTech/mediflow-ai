@@ -1,4 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { AiProviderName } from '@/modules/ai/enums/ai-provider-name.enum.js';
 import { ChatStatus } from '../../enums/chat-status.enum.js';
 import { ChatType } from '../../enums/chat-type.enum.js';
 import { MessageRole } from '../../enums/message-role.enum.js';
@@ -154,8 +155,8 @@ export class MessageResponseDto {
 
 /**
  * Pair returned by `POST /chats/:id/messages`: the persisted USER message
- * and the generated ASSISTANT reply. Generation metadata is stored
- * server-side and is not part of this payload.
+ * and the generated ASSISTANT reply. The generating provider is exposed,
+ * while model and token metadata remain server-side.
  */
 export class ChatReplyResponseDto {
   @ApiProperty({
@@ -170,4 +171,11 @@ export class ChatReplyResponseDto {
     type: MessageResponseDto,
   })
   assistantMessage: MessageResponseDto;
+
+  @ApiProperty({
+    description: 'The provider that generated the assistant reply.',
+    enum: AiProviderName,
+    example: AiProviderName.GEMINI,
+  })
+  provider: AiProviderName;
 }

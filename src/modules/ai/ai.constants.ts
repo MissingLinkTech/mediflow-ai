@@ -1,9 +1,9 @@
-/** Injection token for the active {@link AiProvider}. Phase 5 rebinds this
- *  token (e.g. via a config-driven factory) to add providers without
- *  touching chat business logic. */
-export const AI_PROVIDER = 'AI_PROVIDER';
+/** Injection token for all registered provider implementations. */
+export const AI_PROVIDERS = 'AI_PROVIDERS';
 
 export const DEFAULT_GEMINI_MODEL = 'gemini-3.8-flash';
+export const DEFAULT_GROQ_MODEL = 'openai/gpt-oss-120b';
+export const DEFAULT_OPENAI_MODEL = 'gpt-5-mini';
 
 /** Fallback history window when `AI_MAX_HISTORY_MESSAGES` is unset. */
 export const DEFAULT_AI_MAX_HISTORY_MESSAGES = 20;

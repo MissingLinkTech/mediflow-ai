@@ -1,5 +1,6 @@
 import { Test, type TestingModule } from '@nestjs/testing';
-import { AI_PROVIDER } from './ai.constants.js';
+import { ConfigService } from '@nestjs/config';
+import { AI_PROVIDERS } from './ai.constants.js';
 import { AiService } from './ai.service.js';
 import { AiProviderName } from './enums/ai-provider-name.enum.js';
 import type {
@@ -9,7 +10,7 @@ import type {
 } from './interfaces/ai-provider.interface.js';
 
 describe('AiService', () => {
-  it('delegates generation to the bound provider untouched', async () => {
+  it('delegates generation to the requested provider', async () => {
     const request: AiGenerateRequest = {
       messages: [{ role: 'user', content: 'Hello' }],
       systemInstruction: 'Be helpful.',
@@ -28,11 +29,43 @@ describe('AiService', () => {
     };
 
     const moduleFixture: TestingModule = await Test.createTestingModule({
-      providers: [AiService, { provide: AI_PROVIDER, useValue: provider }],
+      providers: [
+        AiService,
+        { provide: AI_PROVIDERS, useValue: [provider] },
+        {
+          provide: ConfigService,
+          useValue: { get: vi.fn().mockReturnValue(AiProviderName.GEMINI) },
+        },
+      ],
     }).compile();
 
     const service = moduleFixture.get<AiService>(AiService);
-    await expect(service.generateReply(request)).resolves.toBe(result);
+    await expect(
+      service.generateReply(request, AiProviderName.GEMINI),
+    ).resolves.toBe(result);
     expect(generateReply).toHaveBeenCalledWith(request);
+  });
+
+  it('uses the configured default without falling back to another provider', async () => {
+    const request: AiGenerateRequest = {
+      messages: [{ role: 'user', content: 'Hello' }],
+    };
+    const gemini = {
+      name: AiProviderName.GEMINI,
+      generateReply: vi.fn(),
+    } satisfies AiProvider;
+    const groqFailure = new Error('Groq failed');
+    const groq = {
+      name: AiProviderName.GROQ,
+      generateReply: vi.fn().mockRejectedValue(groqFailure),
+    } satisfies AiProvider;
+    const config = {
+      get: vi.fn().mockReturnValue(AiProviderName.GROQ),
+    } as unknown as ConfigService;
+    const service = new AiService([gemini, groq], config);
+
+    await expect(service.generateReply(request)).rejects.toBe(groqFailure);
+    expect(groq.generateReply).toHaveBeenCalledWith(request);
+    expect(gemini.generateReply).not.toHaveBeenCalled();
   });
 });

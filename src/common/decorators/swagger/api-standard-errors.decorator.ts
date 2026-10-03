@@ -3,7 +3,8 @@ import { ApiExtraModels, ApiResponse, getSchemaPath } from '@nestjs/swagger';
 import { ApiErrorResponseDto } from '@/common/dto/api-response.dto.js';
 
 /** HTTP statuses this project documents as reusable error responses. */
-export type StandardErrorStatus = 400 | 401 | 403 | 404 | 409 | 422 | 500 | 503;
+export type StandardErrorStatus =
+  400 | 401 | 403 | 404 | 409 | 422 | 500 | 503 | 504;
 
 interface ErrorExample {
   description: string;
@@ -52,6 +53,10 @@ const ERROR_EXAMPLES: Record<StandardErrorStatus, ErrorExample> = {
     description:
       'Service unavailable — downstream AI provider failure or missing AI configuration.',
     message: 'AI assistance is temporarily unavailable. Please try again.',
+  },
+  504: {
+    description: 'Gateway timeout — the downstream AI provider timed out.',
+    message: 'The AI provider timed out. Please try again.',
   },
 };
 

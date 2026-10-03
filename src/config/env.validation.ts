@@ -7,6 +7,7 @@ import {
   validateSync,
 } from 'class-validator';
 import { Environment } from '../common/enums/environment.enum.js';
+import { AiProviderName } from '../modules/ai/enums/ai-provider-name.enum.js';
 
 class EnvironmentVariables {
   @IsEnum(Environment)
@@ -40,12 +41,32 @@ class EnvironmentVariables {
   JWT_REFRESH_EXPIRES_IN: string;
 
   @IsOptional()
+  @IsEnum(AiProviderName)
+  DEFAULT_AI_PROVIDER?: AiProviderName;
+
+  @IsOptional()
   @IsString()
   GEMINI_API_KEY?: string;
 
   @IsOptional()
   @IsString()
   GEMINI_MODEL?: string;
+
+  @IsOptional()
+  @IsString()
+  GROQ_API_KEY?: string;
+
+  @IsOptional()
+  @IsString()
+  GROQ_MODEL?: string;
+
+  @IsOptional()
+  @IsString()
+  OPENAI_API_KEY?: string;
+
+  @IsOptional()
+  @IsString()
+  OPENAI_MODEL?: string;
 
   @IsOptional()
   @IsNumber()

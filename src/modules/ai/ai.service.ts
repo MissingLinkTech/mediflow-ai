@@ -1,5 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { AI_PROVIDER } from './ai.constants.js';
+import { ConfigService } from '@nestjs/config';
+import { AI_PROVIDERS } from './ai.constants.js';
+import { AiProviderName } from './enums/ai-provider-name.enum.js';
 import type {
   AiGenerateRequest,
   AiGenerateResult,
@@ -13,9 +15,33 @@ import type {
  */
 @Injectable()
 export class AiService {
-  constructor(@Inject(AI_PROVIDER) private readonly provider: AiProvider) {}
+  private readonly providers: ReadonlyMap<AiProviderName, AiProvider>;
 
-  async generateReply(request: AiGenerateRequest): Promise<AiGenerateResult> {
-    return await this.provider.generateReply(request);
+  constructor(
+    @Inject(AI_PROVIDERS) providers: AiProvider[],
+    private readonly configService: ConfigService,
+  ) {
+    this.providers = new Map(
+      providers.map((provider) => [provider.name, provider]),
+    );
+  }
+
+  async generateReply(
+    request: AiGenerateRequest,
+    requestedProvider?: AiProviderName,
+  ): Promise<AiGenerateResult> {
+    const providerName =
+      requestedProvider ??
+      this.configService.get<AiProviderName>('DEFAULT_AI_PROVIDER') ??
+      AiProviderName.GEMINI;
+    const provider = this.providers.get(providerName);
+
+    if (!provider) {
+      // Environment validation prevents this at startup; keep the boundary safe
+      // for isolated module usage and tests as well.
+      throw new Error(`AI provider '${providerName}' is not registered.`);
+    }
+
+    return await provider.generateReply(request);
   }
 }

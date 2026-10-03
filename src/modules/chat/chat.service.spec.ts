@@ -311,19 +311,22 @@ describe('ChatService', () => {
         order: { createdAt: 'DESC', id: 'DESC' },
         take: 20,
       });
-      expect(aiService.generateReply).toHaveBeenCalledWith({
-        messages: [
-          {
-            role: 'user',
-            content: 'I have had headaches for three days.',
-          },
-          {
-            role: 'assistant',
-            content: 'I have had headaches for three days.',
-          },
-        ],
-        systemInstruction: MEDIFLOW_SYSTEM_INSTRUCTION,
-      });
+      expect(aiService.generateReply).toHaveBeenCalledWith(
+        {
+          messages: [
+            {
+              role: 'user',
+              content: 'I have had headaches for three days.',
+            },
+            {
+              role: 'assistant',
+              content: 'I have had headaches for three days.',
+            },
+          ],
+          systemInstruction: MEDIFLOW_SYSTEM_INSTRUCTION,
+        },
+        undefined,
+      );
       expect(messageRepository.save).toHaveBeenCalledWith(
         expect.objectContaining({
           role: MessageRole.ASSISTANT,
@@ -399,6 +402,7 @@ describe('ChatService', () => {
             },
           ],
         }),
+        undefined,
       );
     });
   });

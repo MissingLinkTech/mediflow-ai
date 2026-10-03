@@ -11,7 +11,7 @@ Existing functionality:
 - PostgreSQL connection through TypeORM.
 - User registration, paginated user listing, login, refresh-token rotation, logout, password reset/change, and account profile/settings endpoints.
 - Chat persistence: user-owned chat sessions, chronological message history, and 1:1 structured chat context with paginated REST APIs.
-- Gemini AI replies through a provider-independent `AiModule` (`AIService` → `AiProvider` → `GeminiProvider`); `POST /chats/:id/messages` persists the USER message plus the generated ASSISTANT reply, with per-message generation metadata (`MessageMetadata`).
+- Gemini, Groq, and OpenAI replies through a provider-independent `AiModule` (`ChatService` → `AIService` → provider registry → `AiProvider`); `POST /chats/:id/messages` supports an optional validated provider override and persists the USER message plus the generated ASSISTANT reply with per-message generation metadata (`MessageMetadata`).
 - DTO validation with `class-validator`.
 - Password hashing with `bcrypt`.
 - Standardized success envelope (`TransformInterceptor`) and error envelope (`HttpExceptionFilter`).
@@ -25,7 +25,7 @@ Partially implemented / not yet wired functionality:
 
 Future/planned functionality:
 
-- LangChain, LangGraph, RAG, vector storage, multi-provider LLM routing (only Gemini is wired), Tavily search, medical document analysis, specialist discovery, long-term AI memory, and voice interaction.
+- LangChain, LangGraph, RAG, vector storage, automatic provider routing/fallback, Tavily search, medical document analysis, specialist discovery, long-term AI memory, and voice interaction.
 - Do not document or implement these as existing features unless the task explicitly adds them.
 
 ## Tech Stack
@@ -40,7 +40,7 @@ Confirmed from the repository:
 - TypeORM
 - `@nestjs/config`
 - `@nestjs/jwt`
-- `@google/genai` (Gemini provider only; no LangChain/LangGraph)
+- `@google/genai`, `groq-sdk`, and `openai` (text chat providers; no LangChain/LangGraph)
 - `bcrypt`
 - `class-validator` and `class-transformer`
 - Vitest, Supertest, and `vite-tsconfig-paths`
@@ -55,7 +55,6 @@ Not currently installed/implemented:
 
 - LangChain
 - LangGraph
-- OpenAI/Groq SDKs
 - Tavily
 - Vector database client
 - Redis
@@ -68,7 +67,7 @@ Not currently installed/implemented:
 - `src/app.module.ts`: root module; imports config, database, auth, users, AI, and chat modules.
 - `src/database/database.module.ts`: TypeORM PostgreSQL configuration.
 - `src/database/migrations`: TypeORM migrations (old migrations are never edited).
-- `src/modules/ai`: provider-independent AI layer (`AiModule`/`AIService`, `AiProvider` contract, `GeminiProvider`, centralized system instruction).
+- `src/modules/ai`: provider-independent AI layer (`AiModule`/`AIService`, provider registry, shared `AiProvider` contract, Gemini/Groq/OpenAI implementations, centralized system instruction).
 - `src/modules/chat`: chat sessions/messages/context/metadata entities, enums, DTOs, docs, controller, service, and module.
 - `src/config/env.validation.ts`: startup validation for core environment variables.
 - `src/modules/users`: user/account controllers, service, DTOs, response DTOs, per-route docs decorators, and `User` entity.
@@ -223,7 +222,7 @@ Use `ConfigService` and environment variables for secrets. Preserve existing aut
 
 ## AI / LLM Guidelines
 
-There is one AI module (`AiModule` with `AIService` → `AiProvider` → `GeminiProvider`) and no LangChain/LangGraph dependencies. If a task adds AI capabilities:
+There is one AI module (`AiModule` with `AIService` resolving Gemini, Groq, and OpenAI implementations of `AiProvider`) and no LangChain/LangGraph dependencies. If a task adds AI capabilities:
 
 - Create clear module boundaries instead of mixing AI logic into auth/users.
 - Preserve provider abstraction; avoid hard-coding business logic to one LLM provider.
@@ -344,7 +343,7 @@ Current routes use global prefix `/api/v1`:
 - `GET /api/v1/chats/:id`
 - `PATCH /api/v1/chats/:id`
 - `DELETE /api/v1/chats/:id`
-- `POST /api/v1/chats/:id/messages` (content-only body; persists USER message plus generated ASSISTANT reply, returns `{ userMessage, assistantMessage }`)
+- `POST /api/v1/chats/:id/messages` (`content` plus optional `provider`; persists USER message plus generated ASSISTANT reply, returns `{ userMessage, assistantMessage, provider }`)
 - `GET /api/v1/chats/:id/messages` (paginated `{ items, meta }`, chronological)
 
 ## Documentation Sync

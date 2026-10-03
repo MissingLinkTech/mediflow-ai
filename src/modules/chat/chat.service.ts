@@ -12,6 +12,7 @@ import {
   MEDIFLOW_SYSTEM_INSTRUCTION,
 } from '@/modules/ai/ai.constants.js';
 import { AiService } from '@/modules/ai/ai.service.js';
+import { AiProviderName } from '@/modules/ai/enums/ai-provider-name.enum.js';
 import type { AiChatMessage } from '@/modules/ai/interfaces/ai-provider.interface.js';
 import { User } from '@/modules/users/entities/user.entity.js';
 import { CreateChatDto } from './dto/create-chat.dto.js';
@@ -35,6 +36,7 @@ export interface ChatDetail extends ChatSession {
 export interface ChatReply {
   userMessage: Message;
   assistantMessage: Message;
+  provider: AiProviderName;
 }
 
 const AI_REPLY_FALLBACK =
@@ -172,10 +174,13 @@ export class ChatService {
 
     // The external call runs outside any transaction: short writes only.
     try {
-      const result = await this.aiService.generateReply({
-        messages: toAiMessages(await this.loadRecentHistory(chat.id)),
-        systemInstruction: MEDIFLOW_SYSTEM_INSTRUCTION,
-      });
+      const result = await this.aiService.generateReply(
+        {
+          messages: toAiMessages(await this.loadRecentHistory(chat.id)),
+          systemInstruction: MEDIFLOW_SYSTEM_INSTRUCTION,
+        },
+        dto.provider,
+      );
 
       assistantMessage.content = result.text;
       assistantMessage.status = MessageStatus.COMPLETED;
@@ -195,7 +200,11 @@ export class ChatService {
         }),
       );
 
-      return { userMessage, assistantMessage: savedAssistant };
+      return {
+        userMessage,
+        assistantMessage: savedAssistant,
+        provider: result.provider,
+      };
     } catch (error) {
       // No PENDING row is left behind; history stays intact for a retry.
       assistantMessage.content = AI_REPLY_FALLBACK;
